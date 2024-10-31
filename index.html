@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Document</title>
+  <style>
+      body {
+          margin: 0;
+          padding: 0;
+      }
+
+      #cesium-container {
+          background: #999;
+          height: 100vh;
+      }
+
+      .btn-wrap {
+          position: fixed;
+          top: 5px;
+          left: 5px;
+      }
+
+      .btn-wrap button {
+          font-size: 30px;
+      }
+
+      .tip {
+          background: #fff;
+          margin-bottom: 5px;
+      }
+  </style>
+  <link rel="stylesheet" href="Cesium/Widgets/widgets.css">
+  <script src="Cesium/Cesium.js"></script>
+</head>
+<body>
+
+<div id="cesium-container"></div>
+<div class="btn-wrap">
+  <div class="tip">鼠标左键点击打点, 按住Ctrl转动视角。 红色点表示点击到建筑楼层，为无效点位, 会自动忽略</div>
+  <button onclick="reset()">清空点位</button>
+  <button onclick="download()">导出文件</button>
+</div>
+
+<script>
+  const imageryProvider = new Cesium.UrlTemplateImageryProvider({
+    url: 'https://{s}.tianditu.gov.cn/DataServer?T=img_w&x={x}&y={y}&l={z}&tk=5fc01158ca2fa2d034c3a27ac61099ac',
+    subdomains: ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'],
+    maximumLevel: 18
+  })
+
+  const viewer = new Cesium.Viewer('cesium-container', {
+    imageryProvider
+  })
+  viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+    url: 'https://{s}.tianditu.gov.cn/DataServer?T=ibo_w&x={x}&y={y}&l={z}&tk=5fc01158ca2fa2d034c3a27ac61099ac',
+    subdomains: ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'],
+    maximumLevel: 18
+  }))
+  viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+    url: 'https://{s}.tianditu.gov.cn/DataServer?T=cia_w&x={x}&y={y}&l={z}&tk=5fc01158ca2fa2d034c3a27ac61099ac',
+    subdomains: ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'],
+    maximumLevel: 18
+  }))
+
+  viewer.scene.debugShowFramesPerSecond = true;
+
+
+  // 加载 3D Tileset
+  // map
+  tileset = new Cesium.Cesium3DTileset({
+    // url: './tilesets/lihao/tileset.json'  // 替换为实际的3D Tileset URL
+    url: './tilesets/hangou/tileset.json'  // 替换为实际的3D Tileset URL
+    // url: '/tilesets/mairun/tileset.json'  // 替换为实际的3D Tileset URL
+    // url: './tilesets/yihua/tileset.json'  // 替换为实际的3D Tileset URL
+  });
+  viewer.scene.primitives.add(tileset);
+
+  // 确保视图定位到 Tileset 范围
+  tileset.readyPromise.then(function (tileset) {
+    viewer.scene.camera.flyToBoundingSphere(tileset.boundingSphere, {duration: 0});
+    initEvent()
+  })
+
+  const points = []
+  const handleClick = (target) => {
+    const feature = viewer.scene.pick(target.position)
+
+
+    if (feature === undefined) {
+      // const cartesian3 = viewer.scene.globe.pick(viewer.camera.getPickRay(target.position), viewer.scene)
+      // const cartographic = Cesium.Cartographic.fromCartesian(cartesian3)
+      // console.log(
+      //   '点击了地形经纬高',
+      //   Cesium.Math.toDegrees(cartographic.longitude),
+      //   Cesium.Math.toDegrees(cartographic.latitude),
+      //   cartographic.height
+      // )
+    } else {
+      const featName = feature.getProperty('name')
+      const isFloor = featName.includes('_RF') || /_F\d$/.test(featName)
+
+      const cartesian3 = viewer.scene.pickPosition(target.position)
+
+
+      const cartographic = Cesium.Cartographic.fromCartesian(cartesian3)
+      const point = {
+        name: feature.getProperty('name'),
+        longitude: Cesium.Math.toDegrees(cartographic.longitude),
+        latitude: Cesium.Math.toDegrees(cartographic.latitude),
+        height: cartographic.height
+      }
+
+      if (!isFloor) {
+        points.push(point)
+      }
+
+      // 画点
+      viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.height + 0.8), // 经纬度和高度
+        point: {
+          pixelSize: 10, // 点的大小
+          color: isFloor ? Cesium.Color.RED : Cesium.Color.GREEN, // 点的颜色
+          outlineColor: isFloor ? Cesium.Color.BLACK : Cesium.Color.ORANGE, // 边框颜色
+          outlineWidth: 2 // 边框宽度
+        },
+        label: {
+          text: `${isFloor ? featName + ': ' : ''}${point.height.toFixed(2)}m`, // 标签文本
+          font: '14px Helvetica', // 字体
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE, // 标签样式
+          fillColor: Cesium.Color.WHITE, // 填充颜色
+          backgroundColor: Cesium.Color.BLACK,
+          showBackground: true,
+          outlineColor: Cesium.Color.BLACK, // 边框颜色
+          outlineWidth: 2, // 边框宽度
+          pixelOffset: new Cesium.Cartesian2(0, -6),
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM // 标签位置
+        }
+      })
+      console.log('点击了模型经纬高 points:', feature.getProperty('name'), cartographic.height)
+    }
+  }
+
+
+  function initEvent() {
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
+    handler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK)
+
+    handler.setInputAction(handleClick, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+  }
+
+  function reset() {
+    points.length = 0
+    viewer.entities.removeAll()
+  }
+
+  function download() {
+    const data = JSON.stringify(points)
+    const blob = new Blob([data], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'points.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+</script>
+</body>
+</html>
